@@ -21,8 +21,11 @@ If msgctxt can span multiple lines, this script can't parse it.
 
 ## Terminology probably wrong
 
-I used the word "prefix", but the wikimedia-i18n folks might say "group" or
-"group ID" or something instead.
+I used the word "prefix" to mean "the thing before the key used in Mifos Java
+.properties-based translated messages files", but the wikimedia-i18n folks
+might use the word "group" or "group ID" or something instead.
+
+For the msgctxt `menu-label.loan`, `menu` is the "prefix".
 
 ## Multiple matches for prefix
 
