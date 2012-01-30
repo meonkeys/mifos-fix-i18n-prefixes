@@ -1,54 +1,85 @@
 #!/usr/bin/python
 
-import logging, re, sys
+import logging, polib, re, sys
 
 logging.basicConfig(filename='log',level=logging.WARNING, format='%(asctime)s [%(levelname)s] %(message)s')
 
 logging.info('start')
 logging.debug('sys.argv: %s', sys.argv)
 
+file_with_correct_prefixes_po = polib.pofile(sys.argv[1])
+
 class Stats():
     unknownKey = 0
     keyIsAmbiguous = 0
 
-stats = Stats()
-correct_msgctxt_lines = []
-with open(sys.argv[1]) as file_with_correct_prefixes:
-    for line in file_with_correct_prefixes:
-        if re.match('msgctxt', line):
-            correct_msgctxt_lines.append(line)
+class MifosPoEntry():
+    msgid = None
+    prefix = None
 
-key_to_prefix = {}
-keys_with_multiple_prefixes = {}
-for line in correct_msgctxt_lines:
-    m = re.search(r'"(\w+)-([^"]*)"', line)
+stats = Stats()
+key_to_entry = {}
+for entry in file_with_correct_prefixes_po:
+    m = re.search(r'^(\w+)-([^"]*)$', entry.msgctxt)
     if m:
         prefix = m.group(1)
         key = m.group(2)
-        if key_to_prefix.has_key(key):
-            logging.warning('key %s has multiple prefixes', key)
-            keys_with_multiple_prefixes[key] = 1
+        mifosEntry = MifosPoEntry()
+        mifosEntry.msgid = entry.msgid
+        mifosEntry.prefix = prefix
+        if key_to_entry.has_key(key):
+            key_to_entry[key].append(mifosEntry)
         else:
-            key_to_prefix[key] = prefix
+            key_to_entry[key] = [mifosEntry,]
     else:
-        logging.debug('could not parse prefix from line: %s', line.rstrip())
+        logging.debug('could not parse prefix from msgctxt: %s', entry.msgctxt)
+
+file_needing_prefixes_po = polib.pofile(sys.argv[2])
+broken_msgctxt_to_entry = {}
+for entry in file_needing_prefixes_po:
+    broken_msgctxt_to_entry[entry.msgctxt] = entry
 
 file_needing_prefixes = open(sys.argv[2])
 output = open('fixed.po', 'w')
+
+class FindPrefixResult:
+    found = False
+    prefix = None
+    ambiguous = False
+
+def find_prefix(key):
+    result = FindPrefixResult()
+    if key_to_entry.has_key(key):
+        mifosEntries = key_to_entry[key]
+        if len(mifosEntries) == 1:
+            result.prefix = mifosEntries[0].prefix
+            result.found = True
+        else:
+            for mifosEntry in mifosEntries:
+                broken_entry = broken_msgctxt_to_entry[key]
+                if broken_entry.msgid == mifosEntry.msgid:
+                    if result.found:
+                        result.ambiguous = True
+                        result.prefix = None
+                        break
+                    else:
+                        result.found = True
+                        result.prefix = mifosEntry.prefix
+    return result
 
 for line in file_needing_prefixes:
     if re.match('msgctxt', line):
         m = re.search(r'"([^"]*)"', line)
         key = m.group(1)
-        if keys_with_multiple_prefixes.has_key(key):
-            logging.warning('could not guess prefix for line: %s', line.rstrip())
-            stats.keyIsAmbiguous += 1
-        elif not key_to_prefix.has_key(key):
+        result = find_prefix(key)
+        if not result.found:
             logging.warning('unknown key: %s', key)
             stats.unknownKey += 1
+        elif result.ambiguous:
+            logging.warning('key %s has multiple prefixes', key)
+            stats.keyIsAmbiguous += 1
         else:
-            prefix = key_to_prefix[key]
-            line = re.sub('"%s"' % key, '"%s-%s"' % (prefix, key), line)
+            line = re.sub('"%s"' % key, '"%s-%s"' % (result.prefix, key), line)
     output.write(line)
 
 file_needing_prefixes.close()
